@@ -21,6 +21,8 @@ var nilV = reflect.Value{}
 var customParsers = map[reflect.Type]Parseable{}
 var customParsersMu sync.Mutex
 
+// RegisterCustomArgument adds Parseable as a possible argument to parse
+// arguments to. A plugin should call this function on its init().
 func RegisterCustomArgument(p Parseable) {
 	customParsersMu.Lock()
 	defer customParsersMu.Unlock()

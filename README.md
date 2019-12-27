@@ -4,8 +4,6 @@ Proof-of-concept
 
 ## Usage
 
-TODO
-
 ```go
 var s *discordgo.Session // initialize this
 var c Commands
@@ -41,3 +39,8 @@ func (c *Commands) Send(msg *discordgo.MessageCreate, arg string) error {
 	return err
 }
 ```
+
+## TODO (or to-be-implemented)
+
+- [ ] Help page generator (modular as well)
+- [ ] Usage guide generator (^)

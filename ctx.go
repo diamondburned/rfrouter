@@ -19,6 +19,9 @@ type Context struct {
 	// Mapping first command name to function names
 	MapName func(string) string
 
+	// FormatError formats any errors returned by anything, including the method
+	// commands or the reflect functions. This also includes invalid usage
+	// errors or unknown command errors.
 	FormatError func(error) string
 
 	// Directly to struct
@@ -32,7 +35,23 @@ type Context struct {
 	commands []commandContext
 }
 
-// New makes a new context with a "~" as the prefix.
+// New makes a new context with a "~" as the prefix. cmds must be a pointer to a
+// struct with a *Context field. Example:
+//
+//    type Commands struct {
+//        Ctx *Context
+//    }
+//
+//    cmds := &Commands{}
+//    c, err := rfrouter.New(session, cmds)
+//
+// Commands' exported methods will all be used as commands. Messages are parsed
+// with its first argument (the command) mapped accordingly to c.MapName, which
+// capitalizes the first letter automatically to reflect the exported method
+// name.
+//
+// The default prefix is "~", which means commands must start with "~" followed
+// by the command name in the first argument, else it will be ignored.
 func New(s *discordgo.Session, cmds interface{}) (*Context, error) {
 	ctx := &Context{
 		Session:  s,
