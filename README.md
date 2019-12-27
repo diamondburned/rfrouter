@@ -1,4 +1,4 @@
-# rfrouter
+# [rfrouter](https://godoc.org/git.sr.ht/~diamondburned/rfrouter)
 
 Proof-of-concept
 
