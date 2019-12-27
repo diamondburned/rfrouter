@@ -52,6 +52,8 @@ type Context struct {
 //
 // The default prefix is "~", which means commands must start with "~" followed
 // by the command name in the first argument, else it will be ignored.
+//
+// c.Start() should be called afterwards to actually handle incoming events.
 func New(s *discordgo.Session, cmds interface{}) (*Context, error) {
 	ctx := &Context{
 		Session:  s,
@@ -81,6 +83,9 @@ func New(s *discordgo.Session, cmds interface{}) (*Context, error) {
 	return ctx, nil
 }
 
+// Start adds itself into the discordgo Session handlers. This needs to be run.
+// The returned function is a delete function, which removes itself from the
+// Session handlers.
 func (ctx *Context) Start() func() {
 	return ctx.Session.AddHandler(func(_ *discordgo.Session, v interface{}) {
 		if err := ctx.callCmd(v); err != nil {
@@ -97,10 +102,13 @@ func (ctx *Context) Start() func() {
 	})
 }
 
+// Call should only be used if you know what you're doing.
 func (ctx *Context) Call(event interface{}) error {
 	return ctx.callCmd(event)
 }
 
+// Send sends a string, an embed pointer or a MessageSend pointer. Any other
+// type given will panic.
 func (ctx *Context) Send(channelID string, content interface{}) (*discordgo.Message, error) {
 	switch content := content.(type) {
 	case string:
@@ -115,6 +123,7 @@ func (ctx *Context) Send(channelID string, content interface{}) (*discordgo.Mess
 	}
 }
 
+// Member returns the member, adding it to the State.
 func (ctx *Context) Member(guildID, memberID string) (*discordgo.Member, error) {
 	m, err := ctx.Session.State.Member(guildID, memberID)
 	if err != nil {
@@ -129,6 +138,7 @@ func (ctx *Context) Member(guildID, memberID string) (*discordgo.Member, error) 
 	return m, nil
 }
 
+// Role returns the role, adding it to the State.
 func (ctx *Context) Role(guildID, roleID string) (*discordgo.Role, error) {
 	r, err := ctx.Session.State.Role(guildID, roleID)
 	if err != nil {
@@ -153,6 +163,7 @@ func (ctx *Context) Role(guildID, roleID string) (*discordgo.Role, error) {
 	return r, nil
 }
 
+// Channel returns the channel, adding it to the State.
 func (ctx *Context) Channel(channelID string) (*discordgo.Channel, error) {
 	c, err := ctx.Session.State.Channel(channelID)
 	if err != nil {
