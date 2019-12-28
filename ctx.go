@@ -1,6 +1,7 @@
 package rfrouter
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/bwmarrin/discordgo"
@@ -14,6 +15,8 @@ type Context struct {
 	// The prefix for commands
 	Prefix string
 
+	// TODO: add a complex string mapper API between commands and methods
+
 	// FormatError formats any errors returned by anything, including the method
 	// commands or the reflect functions. This also includes invalid usage
 	// errors or unknown command errors.
@@ -26,6 +29,38 @@ type Context struct {
 
 	subcommands []*Subcommand
 	allCommands []commandContext
+}
+
+// StartBot quickly starts a bot with the given command. It will prepend "Bot"
+// into the token automatically. Refer to example/ for usage.
+func StartBot(token string, cmd interface{}, subcmds ...interface{}) (stop func() error, err error) {
+	s, err := discordgo.New("Bot " + token)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to create a dgo session")
+	}
+
+	c, err := New(s, cmd)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to create rfrouter")
+	}
+
+	for i, sub := range subcmds {
+		if _, err := c.RegisterSubcommand(sub); err != nil {
+			return nil, fmt.Errorf("Failed to register subcommand #%d: %v",
+				i, err)
+		}
+	}
+
+	cancel := c.Start()
+
+	if err := s.Open(); err != nil {
+		return nil, errors.Wrap(err, "Failed to connect to Discord")
+	}
+
+	return func() error {
+		cancel()
+		return s.Close()
+	}, nil
 }
 
 // New makes a new context with a "~" as the prefix. cmds must be a pointer to a
@@ -101,7 +136,14 @@ func (ctx *Context) Start() func() {
 				}
 
 				// TODO: hard-coded? idk
-				ctx.Session.ChannelMessageSend(mc.ChannelID, str)
+				_, Merr := ctx.Session.ChannelMessageSend(mc.ChannelID, str)
+				if Merr != nil {
+					// Log the main error first
+					ctx.ErrorLogger(errors.Wrap(err, str))
+					// Then the message error
+					ctx.ErrorLogger(Merr)
+					// TODO: there ought to be a better way lol
+				}
 			}
 		}
 	})
