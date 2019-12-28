@@ -1,38 +1,31 @@
 package rfrouter
 
 import (
-	"reflect"
-	"unicode"
+	"log"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/pkg/errors"
 )
 
 type Context struct {
+	*Subcommand
 	*discordgo.Session
-
-	Commands interface{}
 
 	// The prefix for commands
 	Prefix string
-
-	// Mapping first command name to function names
-	MapName func(string) string
 
 	// FormatError formats any errors returned by anything, including the method
 	// commands or the reflect functions. This also includes invalid usage
 	// errors or unknown command errors.
 	FormatError func(error) string
 
-	// Directly to struct
-	cmdValue *reflect.Value
-	cmdType  *reflect.Type
+	// ErrorLogger logs any error that anything makes and the library can't
+	// reply to the client. This includes any event callback errors that aren't
+	// Message Create.
+	ErrorLogger func(error)
 
-	// Pointer value
-	ptrValue *reflect.Value
-	ptrType  *reflect.Type
-
-	commands []commandContext
+	subcommands []*Subcommand
+	allCommands []commandContext
 }
 
 // New makes a new context with a "~" as the prefix. cmds must be a pointer to a
@@ -54,33 +47,45 @@ type Context struct {
 // by the command name in the first argument, else it will be ignored.
 //
 // c.Start() should be called afterwards to actually handle incoming events.
-func New(s *discordgo.Session, cmds interface{}) (*Context, error) {
-	ctx := &Context{
-		Session:  s,
-		Commands: cmds,
-		Prefix:   "~",
-		MapName: func(s string) string {
-			first := unicode.ToUpper(rune(s[0]))
-			return string(first) + s[1:]
-		},
-		FormatError: func(err error) string {
-			return err.Error()
-		},
-	}
-
-	if err := ctx.reflectCommands(); err != nil {
+func New(s *discordgo.Session, cmd interface{}) (*Context, error) {
+	c, err := NewSubcommand(cmd)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := ctx.initCommands(); err != nil {
+	ctx := &Context{
+		Subcommand: c,
+		Session:    s,
+		Prefix:     "~",
+		FormatError: func(err error) string {
+			return err.Error()
+		},
+		ErrorLogger: func(err error) {
+			log.Println("ERR:", err)
+		},
+	}
+
+	if err := ctx.initCommands(ctx); err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize with given cmds")
 	}
 
-	if err := ctx.parseCommands(); err != nil {
-		return nil, errors.Wrap(err, "Failed to parse commands")
+	return ctx, nil
+}
+
+func (ctx *Context) RegisterSubcommand(cmd interface{}) (*Subcommand, error) {
+	s, err := NewSubcommand(cmd)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to add subcommand")
 	}
 
-	return ctx, nil
+	s.needsName()
+
+	if err := s.initCommands(ctx); err != nil {
+		return nil, errors.Wrap(err, "Failed to initialize subcommand")
+	}
+
+	ctx.subcommands = append(ctx.subcommands, s)
+	return s, nil
 }
 
 // Start adds itself into the discordgo Session handlers. This needs to be run.

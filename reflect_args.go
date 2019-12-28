@@ -15,6 +15,15 @@ type Parseable interface {
 	Parse(string) error
 }
 
+// ManaulParseable implements a ParseContent(string) method. If the library sees
+// this for an argument, it will send all of the arguments (including the
+// command) into the method. If used, this should be the only argument followed
+// after the Message Create event. Any more and the router will ignore.
+type ManualParseable interface {
+	// $0 will have its prefix trimmed.
+	ParseContent([]string) error
+}
+
 // nilV, only used to return an error
 var nilV = reflect.Value{}
 
