@@ -24,6 +24,15 @@ type ManualParseable interface {
 	ParseContent([]string) error
 }
 
+type RawArguments struct {
+	Arguments []string
+}
+
+func (r *RawArguments) ParseContent(args []string) error {
+	r.Arguments = args
+	return nil
+}
+
 // nilV, only used to return an error
 var nilV = reflect.Value{}
 

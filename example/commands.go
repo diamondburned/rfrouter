@@ -16,7 +16,26 @@ type Commands struct {
 func (c *Commands) Hello(m *discordgo.MessageCreate) error {
 	c.HelloCalled++
 
-	_, err := c.Context.Send(m.ChannelID, fmt.Sprintf(
-		"Hello, world: %d", c.HelloCalled))
-	return err
+	return c.Context.Send(m.ChannelID, fmt.Sprintf(
+		"Hello, %s: %d", m.Author.Mention(), c.HelloCalled))
+}
+
+// ~echo - admin only
+func (c *Commands) AーEcho(m *discordgo.MessageCreate) error {
+	return c.Context.Send(m.ChannelID, m.Content)
+}
+
+func (c *Commands) EditMessage(m *discordgo.MessageUpdate) error {
+	for _, user := range m.Mentions {
+		if user.ID == c.Context.State.User.ID {
+			return c.Context.Reply(m.Message, "you edited.")
+		}
+	}
+
+	return nil
+}
+
+// ~help
+func (c *Commands) Help(m *discordgo.MessageCreate) error {
+	return c.Context.Send(m.ChannelID, c.Context.Help())
 }

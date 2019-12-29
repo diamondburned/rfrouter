@@ -2,6 +2,7 @@ package rfrouter
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -9,18 +10,25 @@ import (
 )
 
 type testCommands struct {
-	Ctx       *Context
-	retSend   chan string
-	retCustom chan []string
+	Ctx    *Context
+	Return chan interface{}
 }
 
 func (t *testCommands) Send(_ *discordgo.MessageCreate, arg string) error {
-	t.retSend <- arg
+	t.Return <- arg
 	return errors.New("oh no")
 }
 
 func (t *testCommands) Custom(_ *discordgo.MessageCreate, c *CustomParseable) error {
-	t.retCustom <- c.args
+	t.Return <- c.args
+	return nil
+}
+
+func (t *testCommands) NoArgs(_ *discordgo.MessageCreate) error {
+	return errors.New("passed")
+}
+
+func (t *testCommands) Noop(_ *discordgo.MessageCreate) error {
 	return nil
 }
 
@@ -61,7 +69,7 @@ func TestContext(t *testing.T) {
 	}
 
 	t.Run("init commands", func(t *testing.T) {
-		if err := ctx.Subcommand.initCommands(ctx); err != nil {
+		if err := ctx.Subcommand.InitCommands(ctx); err != nil {
 			t.Fatal("Failed to init commands:", err)
 		}
 
@@ -74,24 +82,20 @@ func TestContext(t *testing.T) {
 		}
 	})
 
-	t.Run("call command", func(t *testing.T) {
-		// Set a custom prefix
-		ctx.Prefix = "~"
-
+	testReturn := func(expects interface{}, content string) (call error) {
 		// Return channel for testing
-		ret := make(chan string)
-		given.retSend = ret
+		ret := make(chan interface{})
+		given.Return = ret
 
 		// Mock a messageCreate event
 		m := &discordgo.MessageCreate{
 			Message: &discordgo.Message{
-				Content: "~send test", // $0 doesn't matter, MapName
+				Content: content,
 			},
 		}
 
 		var (
-			callCh  = make(chan error)
-			callErr error
+			callCh = make(chan error)
 		)
 
 		go func() {
@@ -100,58 +104,123 @@ func TestContext(t *testing.T) {
 
 		select {
 		case arg := <-ret:
-			if arg != "test" {
+			if !reflect.DeepEqual(arg, expects) {
 				t.Fatal("returned argument is invalid:", arg)
 			}
-			callErr = <-callCh
+			call = <-callCh
 
-		case callErr = <-callCh:
-			t.Fatal("expected return before error:", callErr)
+		case call = <-callCh:
+			t.Fatal("expected return before error:", call)
 		}
 
-		if callErr == nil {
-			t.Fatal("no error returned, error expected")
-		}
+		return
+	}
 
-		if callErr.Error() != "oh no" {
-			t.Fatal("unexpected error:", callErr)
+	t.Run("call command", func(t *testing.T) {
+		// Set a custom prefix
+		ctx.Prefix = "~"
+
+		if err := testReturn("test", "~send test"); err.Error() != "oh no" {
+			t.Fatal("unexpected error:", err)
 		}
 	})
 
 	t.Run("call command custom parser", func(t *testing.T) {
 		ctx.Prefix = "!"
+		expects := []string{"custom", "arg1", ":)"}
 
-		ret := make(chan []string)
-		given.retCustom = ret
+		if err := testReturn(expects, "!custom arg1 :)"); err != nil {
+			t.Fatal("Unexpected call error:", err)
+		}
+	})
 
+	testMessage := func(content string) error {
+		// Mock a messageCreate event
 		m := &discordgo.MessageCreate{
 			Message: &discordgo.Message{
-				Content: "!custom arg1 :)",
+				Content: content,
 			},
 		}
 
-		var (
-			callCh  = make(chan error)
-			callErr error
-		)
+		return ctx.callCmd(m)
+	}
 
-		go func() {
-			callCh <- ctx.callCmd(m)
-		}()
+	t.Run("call command without args", func(t *testing.T) {
+		ctx.Prefix = ""
 
-		select {
-		case args := <-ret:
-			if !reflect.DeepEqual(args, []string{"custom", "arg1", ":)"}) {
-				t.Fatal("returned argument is invalid:", args)
-			}
-			callErr = <-callCh
+		if err := testMessage("noargs"); err.Error() != "passed" {
+			t.Fatal("unexpected error:", err)
+		}
+	})
 
-		case callErr = <-callCh:
-			t.Fatal("expected return before error:", callErr)
+	// Test error cases
+
+	t.Run("call unknown command", func(t *testing.T) {
+		ctx.Prefix = "joe pls "
+
+		err := testMessage("joe pls no")
+
+		if err == nil || !strings.HasPrefix(err.Error(), "Unknown command:") {
+			t.Fatal("unexpected error:", err)
+		}
+	})
+
+	// Test subcommands
+
+	t.Run("register subcommand", func(t *testing.T) {
+		ctx.Prefix = "run "
+
+		_, err := ctx.RegisterSubcommand(&testCommands{})
+		if err != nil {
+			t.Fatal("Failed to register subcommand:", err)
 		}
 
-		if callErr != nil {
-			t.Fatal("Unexpected call error:", callErr)
+		if err := testMessage("run testcommands noop"); err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+	})
+}
+
+type hasID struct {
+	ChannelID string
+}
+
+type embedsID struct {
+	*hasID
+}
+
+type hasChannelInName struct {
+	ID string
+}
+
+func TestReflectChannelID(t *testing.T) {
+	var s = &hasID{
+		ChannelID: "channelID",
+	}
+
+	t.Run("hasID", func(t *testing.T) {
+		if id := reflectChannelID(s); id != "channelID" {
+			t.Fatal("unexpected channelID:", id)
+		}
+	})
+
+	t.Run("embedsID", func(t *testing.T) {
+		var e = &embedsID{
+			hasID: s,
+		}
+
+		if id := reflectChannelID(e); id != "channelID" {
+			t.Fatal("unexpected channelID:", id)
+		}
+	})
+
+	t.Run("hasChannelInName", func(t *testing.T) {
+		var s = &hasChannelInName{
+			ID: "channelID",
+		}
+
+		if id := reflectChannelID(s); id != "channelID" {
+			t.Fatal("unexpected channelID:", id)
 		}
 	})
 }

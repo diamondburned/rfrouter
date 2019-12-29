@@ -8,9 +8,24 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	typeMessageCreate = reflect.TypeOf((*discordgo.MessageCreate)(nil))
+	// typeof.Implements(typeI*)
+	typeIError = reflect.TypeOf((*error)(nil)).Elem()
+	typeIManP  = reflect.TypeOf((*ManualParseable)(nil)).Elem()
+)
+
 type Subcommand struct {
+	Description string
+
+	// Commands contains all the registered command contexts.
+	Commands []*CommandContext
+
 	// struct name
 	name string
+
+	// struct flags
+	Flag NameFlag
 
 	// Directly to struct
 	cmdValue reflect.Value
@@ -20,13 +35,49 @@ type Subcommand struct {
 	ptrValue reflect.Value
 	ptrType  reflect.Type
 
-	command  interface{}
-	commands []commandContext
+	// command interface as reference
+	command interface{}
+}
+
+// CommandContext is an internal struct containing fields to make this library
+// work. As such, they're all unexported. Description, however, is exported for
+// editing, and may be used to generate more informative help messages.
+type CommandContext struct {
+	Description string
+	Flag        NameFlag
+
+	name      string        // all lower-case
+	value     reflect.Value // Func
+	event     reflect.Type  // discordgo.*
+	method    reflect.Method
+	arguments []argumentValueFn
+
+	parseMethod reflect.Method
+	parseType   reflect.Type
+}
+
+// Descriptor is optionally used to set the Description of a command context.
+type Descriptor interface {
+	Description() string
+}
+
+// Namer is optionally used to override the command context's name.
+type Namer interface {
+	Name() string
+}
+
+func (cctx *CommandContext) Name() string {
+	return cctx.name
 }
 
 func NewSubcommand(cmd interface{}) (*Subcommand, error) {
 	var sub = Subcommand{
 		command: cmd,
+	}
+
+	// Set description
+	if d, ok := cmd.(Descriptor); ok {
+		sub.Description = d.Description()
 	}
 
 	if err := sub.reflectCommands(); err != nil {
@@ -46,8 +97,25 @@ func (sub *Subcommand) Name() string {
 	return sub.name
 }
 
-func (sub *Subcommand) needsName() {
-	sub.name = strings.ToLower(sub.cmdType.Name())
+// NeedsName sets the name for this subcommand. Like InitCommands, this
+// shouldn't be called at all, rather you should use RegisterSubcommand.
+func (sub *Subcommand) NeedsName() {
+	var name string
+	var flag NameFlag
+
+	// Check for interface
+	if n, ok := sub.command.(Namer); ok {
+		flag, name = ParseFlag(n.Name())
+	} else {
+		flag, name = ParseFlag(sub.cmdType.Name())
+	}
+
+	if !flag.Is(Raw) {
+		name = strings.ToLower(name)
+	}
+
+	sub.name = name
+	sub.Flag = flag
 }
 
 func (sub *Subcommand) reflectCommands() error {
@@ -76,8 +144,9 @@ func (sub *Subcommand) reflectCommands() error {
 	return nil
 }
 
-// called later
-func (sub *Subcommand) initCommands(ctx *Context) error {
+// InitCommands fills a Subcommand with a context. This shouldn't be called at
+// all, rather you should use the RegisterSubcommand method of a Context.
+func (sub *Subcommand) InitCommands(ctx *Context) error {
 	// Start filling up a *Context field
 	for i := 0; i < sub.cmdValue.NumField(); i++ {
 		field := sub.cmdValue.Field(i)
@@ -97,27 +166,9 @@ func (sub *Subcommand) initCommands(ctx *Context) error {
 	return errors.New("No fields with *Command found")
 }
 
-type commandContext struct {
-	name      string        // all lower-case
-	value     reflect.Value // Func
-	event     reflect.Type  // discordgo.*
-	method    reflect.Method
-	arguments []argumentValueFn
-
-	parseMethod reflect.Method
-	parseType   reflect.Type
-}
-
-var (
-	typeMessageCreate = reflect.TypeOf((*discordgo.MessageCreate)(nil))
-	// typeof.Implements(typeI*)
-	typeIError = reflect.TypeOf((*error)(nil)).Elem()
-	typeIManP  = reflect.TypeOf((*ManualParseable)(nil)).Elem()
-)
-
 func (sub *Subcommand) parseCommands() error {
 	var numMethods = sub.ptrValue.NumMethod()
-	var commands = make([]commandContext, 0, numMethods)
+	var commands = make([]*CommandContext, 0, numMethods)
 
 	for i := 0; i < numMethods; i++ {
 		method := sub.ptrValue.Method(i)
@@ -136,26 +187,35 @@ func (sub *Subcommand) parseCommands() error {
 
 		// Check return type
 		if err := methodT.Out(0); err == nil || !err.Implements(typeIError) {
+			// Invalid, skip
 			continue
 		}
 
-		var command = commandContext{
+		var command = CommandContext{
 			method: sub.ptrType.Method(i),
 			value:  method,
 			event:  methodT.In(0), // parse event
 		}
 
-		// Grab the method name
-		command.name = strings.ToLower(command.method.Name)
+		// Parse the method name
+		flag, name := ParseFlag(command.method.Name)
+
+		if !flag.Is(Raw) {
+			name = strings.ToLower(name)
+		}
+
+		// Set the method name and flag
+		command.name = name
+		command.Flag = flag
 
 		// TODO: allow more flexibility
 		if command.event != typeMessageCreate {
-			continue
+			goto Done
 		}
 
 		if numArgs == 1 {
 			// done
-			continue
+			goto Done
 		}
 
 		// TODO: manual parser
@@ -171,7 +231,7 @@ func (sub *Subcommand) parseCommands() error {
 
 			command.parseMethod = mt
 			command.parseType = t.Elem()
-			goto Continue
+			goto Done
 		}
 
 		command.arguments = make([]argumentValueFn, 0, numArgs)
@@ -188,11 +248,11 @@ func (sub *Subcommand) parseCommands() error {
 			command.arguments = append(command.arguments, avfs)
 		}
 
-	Continue:
+	Done:
 		// Append
-		commands = append(commands, command)
+		commands = append(commands, &command)
 	}
 
-	sub.commands = commands
+	sub.Commands = commands
 	return nil
 }

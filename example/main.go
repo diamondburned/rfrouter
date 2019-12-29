@@ -19,12 +19,29 @@ func main() {
 		HelloCalled: 69,
 	}
 
-	cancel, err := rfrouter.StartBot(token, &commands, &debug.Debug{})
+	c, err := rfrouter.StartBot(token, &commands,
+		func(ctx *rfrouter.Context) error {
+			// Set the prefix
+			ctx.Prefix = "~"
+
+			// Set the descriptions
+			ctx.Name = "rfrouter example"
+			ctx.Description = "https://git.sr.ht/~diamondburned/rfrouter"
+
+			// Add the subcommand
+			_, err := ctx.RegisterSubcommand(&debug.Debug{})
+			return err
+		},
+	)
+
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("Failed to start the bot:", err)
 	}
 
-	defer cancel()
+	// Stop bot on exit
+	defer c()
+
+	log.Println("Started bot...")
 
 	sig := make(chan os.Signal)
 	signal.Notify(sig, os.Interrupt)

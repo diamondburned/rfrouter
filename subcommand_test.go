@@ -26,16 +26,18 @@ func TestSubcommand(t *testing.T) {
 			t.Fatal("Failed to parse commands:", err)
 		}
 
-		if len(sub.commands) != 2 {
-			t.Fatal("invalid ctx.commands len", len(sub.commands))
+		// !!! CHANGE ME
+		if len(sub.Commands) != 4 {
+			t.Fatal("invalid ctx.commands len", len(sub.Commands))
 		}
 
 		var (
 			foundSend   bool
 			foundCustom bool
+			foundNoArgs bool
 		)
 
-		for _, this := range sub.commands {
+		for _, this := range sub.Commands {
 			switch this.name {
 			case "send":
 				foundSend = true
@@ -52,6 +54,18 @@ func TestSubcommand(t *testing.T) {
 					t.Fatal("custom has nil manualParse")
 				}
 
+			case "noargs":
+				foundNoArgs = true
+				if len(this.arguments) != 0 {
+					t.Fatal("expected 0 arguments, got non-zero")
+				}
+				if this.parseType != nil {
+					t.Fatal("unexpected parseType")
+				}
+
+			case "noop":
+				// Found, but whatever
+
 			default:
 				t.Fatal("Unexpected command:", this.name)
 			}
@@ -67,6 +81,10 @@ func TestSubcommand(t *testing.T) {
 
 		if !foundCustom {
 			t.Fatal("missing custom")
+		}
+
+		if !foundNoArgs {
+			t.Fatal("missing noargs")
 		}
 	})
 }
