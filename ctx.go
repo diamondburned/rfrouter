@@ -577,10 +577,20 @@ func reflectUserID(_struct interface{}) string {
 }
 
 func _reflectID(v reflect.Value, thing string) string {
+	if !v.IsValid() {
+		return ""
+	}
+
 	t := v.Type()
 
 	if t.Kind() == reflect.Ptr {
 		v = v.Elem()
+
+		// Recheck after dereferring
+		if !v.IsValid() {
+			return ""
+		}
+
 		t = v.Type()
 	}
 
@@ -600,10 +610,6 @@ func _reflectID(v reflect.Value, thing string) string {
 
 		switch fType.Kind() {
 		case reflect.Struct:
-			if !field.Anonymous {
-				break
-			}
-
 			if chID := _reflectID(v.Field(i), thing); chID != "" {
 				return chID
 			}

@@ -25,7 +25,7 @@ func (c *Commands) AーEcho(m *discordgo.MessageCreate) error {
 	return c.Context.Send(m.ChannelID, m.Content)
 }
 
-func (c *Commands) EditMessage(m *discordgo.MessageUpdate) error {
+func (c *Commands) AーEditMessage(m *discordgo.MessageUpdate) error {
 	for _, user := range m.Mentions {
 		if user.ID == c.Context.State.User.ID {
 			return c.Context.Reply(m.Message, "you edited.")

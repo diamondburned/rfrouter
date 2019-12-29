@@ -29,7 +29,7 @@ func main() {
 			ctx.Description = "https://git.sr.ht/~diamondburned/rfrouter"
 
 			// Add the subcommand
-			_, err := ctx.RegisterSubcommand(&debug.Debug{})
+			_, err := ctx.RegisterSubcommand(&debug.AーDebug{})
 			return err
 		},
 	)

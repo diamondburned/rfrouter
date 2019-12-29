@@ -100,14 +100,11 @@ func (sub *Subcommand) Name() string {
 // NeedsName sets the name for this subcommand. Like InitCommands, this
 // shouldn't be called at all, rather you should use RegisterSubcommand.
 func (sub *Subcommand) NeedsName() {
-	var name string
-	var flag NameFlag
+	flag, name := ParseFlag(sub.cmdType.Name())
 
 	// Check for interface
 	if n, ok := sub.command.(Namer); ok {
-		flag, name = ParseFlag(n.Name())
-	} else {
-		flag, name = ParseFlag(sub.cmdType.Name())
+		name = n.Name()
 	}
 
 	if !flag.Is(Raw) {
