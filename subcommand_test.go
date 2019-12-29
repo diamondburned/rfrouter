@@ -88,3 +88,9 @@ func TestSubcommand(t *testing.T) {
 		}
 	})
 }
+
+func BenchmarkSubcommandConstructor(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		NewSubcommand(&testCommands{})
+	}
+}

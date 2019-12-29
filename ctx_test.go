@@ -181,12 +181,50 @@ func TestContext(t *testing.T) {
 	})
 }
 
+func BenchmarkConstructor(b *testing.B) {
+	var session = &discordgo.Session{
+		Token: "dumb token",
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, _ = New(session, &testCommands{})
+	}
+}
+
+func BenchmarkCall(b *testing.B) {
+	var given = &testCommands{}
+	var session = &discordgo.Session{
+		Token: "dumb token",
+	}
+
+	s, _ := NewSubcommand(given)
+
+	var ctx = &Context{
+		Subcommand: s,
+		Session:    session,
+		Prefix:     "~",
+	}
+
+	m := &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			Content: "~noop",
+		},
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		ctx.callCmd(m)
+	}
+}
+
 type hasID struct {
 	ChannelID string
 }
 
 type embedsID struct {
 	*hasID
+	*embedsID
 }
 
 type hasChannelInName struct {
@@ -223,4 +261,26 @@ func TestReflectChannelID(t *testing.T) {
 			t.Fatal("unexpected channelID:", id)
 		}
 	})
+}
+
+func BenchmarkReflectChannelID_1Level(b *testing.B) {
+	var s = &hasID{
+		ChannelID: "channelID",
+	}
+
+	for i := 0; i < b.N; i++ {
+		_ = reflectChannelID(s)
+	}
+}
+
+func BenchmarkReflectChannelID_5Level(b *testing.B) {
+	var s = &embedsID{nil, &embedsID{nil, &embedsID{nil, &embedsID{
+		hasID: &hasID{
+			ChannelID: "channelID",
+		},
+	}}}}
+
+	for i := 0; i < b.N; i++ {
+		_ = reflectChannelID(s)
+	}
 }
