@@ -218,6 +218,27 @@ func BenchmarkCall(b *testing.B) {
 	}
 }
 
+func BenchmarkHelp(b *testing.B) {
+	var given = &testCommands{}
+	var session = &discordgo.Session{
+		Token: "dumb token",
+	}
+
+	s, _ := NewSubcommand(given)
+
+	var ctx = &Context{
+		Subcommand: s,
+		Session:    session,
+		Prefix:     "~",
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_ = ctx.Help()
+	}
+}
+
 type hasID struct {
 	ChannelID string
 }
@@ -274,11 +295,20 @@ func BenchmarkReflectChannelID_1Level(b *testing.B) {
 }
 
 func BenchmarkReflectChannelID_5Level(b *testing.B) {
-	var s = &embedsID{nil, &embedsID{nil, &embedsID{nil, &embedsID{
-		hasID: &hasID{
-			ChannelID: "channelID",
+	var s = &embedsID{
+		nil,
+		&embedsID{
+			nil,
+			&embedsID{
+				nil,
+				&embedsID{
+					hasID: &hasID{
+						ChannelID: "channelID",
+					},
+				},
+			},
 		},
-	}}}}
+	}
 
 	for i := 0; i < b.N; i++ {
 		_ = reflectChannelID(s)

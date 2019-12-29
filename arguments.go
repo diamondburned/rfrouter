@@ -4,7 +4,6 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
-	"sync"
 )
 
 type argumentValueFn func(string) (reflect.Value, error)
@@ -36,35 +35,27 @@ func (r *RawArguments) ParseContent(args []string) error {
 // nilV, only used to return an error
 var nilV = reflect.Value{}
 
-var customParsers = map[reflect.Type]Parseable{}
-var customParsersMu sync.Mutex
-
-// RegisterCustomArgument adds Parseable as a possible argument to parse
-// arguments to. A plugin should call this function on its init().
-func RegisterCustomArgument(p Parseable) {
-	customParsersMu.Lock()
-	defer customParsersMu.Unlock()
-
-	customParsers[reflect.TypeOf(p)] = p
-}
-
 func getArgumentValueFn(t reflect.Type) (argumentValueFn, error) {
-	// Custom ones get higher priorities
-	customParsersMu.Lock()
+	if t.Implements(typeIParser) {
+		mt, ok := t.MethodByName("Parse")
+		if !ok {
+			panic("BUG: type IParser does not implement Parse")
+		}
 
-	if p, ok := customParsers[t]; ok {
-		customParsersMu.Unlock()
+		return func(input string) (reflect.Value, error) {
+			v := reflect.New(t.Elem())
 
-		return func(s string) (reflect.Value, error) {
-			if err := p.Parse(s); err != nil {
+			ret := mt.Func.Call([]reflect.Value{
+				v, reflect.ValueOf(input),
+			})
+
+			if err := errorReturns(ret); err != nil {
 				return nilV, err
 			}
 
-			return reflect.ValueOf(p), nil
+			return v, nil
 		}, nil
 	}
-
-	customParsersMu.Unlock()
 
 	var fn argumentValueFn
 

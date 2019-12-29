@@ -11,8 +11,10 @@ import (
 var (
 	typeMessageCreate = reflect.TypeOf((*discordgo.MessageCreate)(nil))
 	// typeof.Implements(typeI*)
-	typeIError = reflect.TypeOf((*error)(nil)).Elem()
-	typeIManP  = reflect.TypeOf((*ManualParseable)(nil)).Elem()
+	typeIError  = reflect.TypeOf((*error)(nil)).Elem()
+	typeIManP   = reflect.TypeOf((*ManualParseable)(nil)).Elem()
+	typeIParser = reflect.TypeOf((*Parseable)(nil)).Elem()
+	typeIUsager = reflect.TypeOf((*Usager)(nil)).Elem()
 )
 
 type Subcommand struct {
@@ -46,14 +48,18 @@ type CommandContext struct {
 	Description string
 	Flag        NameFlag
 
-	name      string        // all lower-case
-	value     reflect.Value // Func
-	event     reflect.Type  // discordgo.*
-	method    reflect.Method
-	arguments []argumentValueFn
+	name   string        // all lower-case
+	value  reflect.Value // Func
+	event  reflect.Type  // discordgo.*
+	method reflect.Method
+
+	// equal slices
+	argStrings []string
+	arguments  []argumentValueFn
 
 	parseMethod reflect.Method
 	parseType   reflect.Type
+	parseUsage  string
 }
 
 // Descriptor is optionally used to set the Description of a command context.
@@ -66,8 +72,26 @@ type Namer interface {
 	Name() string
 }
 
+// Usager is optionally used to override the generated usage for either an
+// argument, or multiple (using ManualParseable).
+type Usager interface {
+	Usage() string
+}
+
 func (cctx *CommandContext) Name() string {
 	return cctx.name
+}
+
+func (cctx *CommandContext) Usage() []string {
+	if cctx.parseType != nil {
+		return []string{cctx.parseUsage}
+	}
+
+	if len(cctx.arguments) == 0 {
+		return nil
+	}
+
+	return cctx.argStrings
 }
 
 func NewSubcommand(cmd interface{}) (*Subcommand, error) {
@@ -215,19 +239,17 @@ func (sub *Subcommand) parseCommands() error {
 			goto Done
 		}
 
-		// TODO: manual parser
 		if t := methodT.In(1); t.Implements(typeIManP) {
-			if t.Kind() != reflect.Ptr {
-				return errors.New("ManualParser is not pointer " + t.String())
-			}
-
-			mt, ok := t.MethodByName("ParseContent")
-			if !ok {
-				panic("BUG: type IManP does not implement ParseContent")
-			}
+			mt, _ := t.MethodByName("ParseContent")
 
 			command.parseMethod = mt
 			command.parseType = t.Elem()
+
+			command.parseUsage = usager(t)
+			if command.parseUsage == "" {
+				command.parseUsage = t.String()
+			}
+
 			goto Done
 		}
 
@@ -243,6 +265,13 @@ func (sub *Subcommand) parseCommands() error {
 			}
 
 			command.arguments = append(command.arguments, avfs)
+
+			var usage = usager(t)
+			if usage == "" {
+				usage = t.String()
+			}
+
+			command.argStrings = append(command.argStrings, usage)
 		}
 
 	Done:
@@ -252,4 +281,16 @@ func (sub *Subcommand) parseCommands() error {
 
 	sub.Commands = commands
 	return nil
+}
+
+func usager(t reflect.Type) string {
+	if !t.Implements(typeIUsager) {
+		return ""
+	}
+
+	usageFn, _ := t.MethodByName("Usage")
+	v := usageFn.Func.Call([]reflect.Value{
+		reflect.New(t.Elem()),
+	})
+	return v[0].String()
 }

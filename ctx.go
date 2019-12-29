@@ -23,17 +23,19 @@ type Context struct {
 	// The prefix for commands
 	Prefix string
 
-	// TODO: add a complex string mapper API between commands and methods
-
 	// FormatError formats any errors returned by anything, including the method
 	// commands or the reflect functions. This also includes invalid usage
-	// errors or unknown command errors.
+	// errors or unknown command errors. Returning an empty string means
+	// ignoring the error.
 	FormatError func(error) string
 
 	// ErrorLogger logs any error that anything makes and the library can't
 	// reply to the client. This includes any event callback errors that aren't
 	// Message Create.
 	ErrorLogger func(error)
+
+	// ReplyError when true replies to the user the error.
+	ReplyError bool
 
 	// Subcommands contains all the registered subcommands.
 	Subcommands []*Subcommand
@@ -105,8 +107,9 @@ func New(s *discordgo.Session, cmd interface{}) (*Context, error) {
 			return err.Error()
 		},
 		ErrorLogger: func(err error) {
-			log.Println("ERR:", err)
+			log.Println("Bot error:", err)
 		},
+		ReplyError: true,
 	}
 
 	if err := ctx.InitCommands(ctx); err != nil {
@@ -148,19 +151,21 @@ func (ctx *Context) Start() func() {
 	return ctx.Session.AddHandler(func(_ *discordgo.Session, v interface{}) {
 		if err := ctx.callCmd(v); err != nil {
 			if str := ctx.FormatError(err); str != "" {
+				// Log the main error first
+				ctx.ErrorLogger(errors.Wrap(err, str))
+
 				mc, ok := v.(*discordgo.MessageCreate)
 				if !ok {
 					return
 				}
 
-				// TODO: hard-coded? idk
-				_, Merr := ctx.Session.ChannelMessageSend(mc.ChannelID, str)
-				if Merr != nil {
-					// Log the main error first
-					ctx.ErrorLogger(errors.Wrap(err, str))
-					// Then the message error
-					ctx.ErrorLogger(Merr)
-					// TODO: there ought to be a better way lol
+				if ctx.ReplyError {
+					_, Merr := ctx.Session.ChannelMessageSend(mc.ChannelID, str)
+					if Merr != nil {
+						// Then the message error
+						ctx.ErrorLogger(Merr)
+						// TODO: there ought to be a better way lol
+					}
 				}
 			}
 		}
@@ -230,17 +235,17 @@ func (ctx *Context) Help() string {
 
 		help.WriteString("      " + ctx.Prefix + cmd.Name())
 
-		if cmd.Description != "" {
+		switch {
+		case len(cmd.Usage()) > 0:
+			help.WriteString(" " + strings.Join(cmd.Usage(), " "))
+		case cmd.Description != "":
 			help.WriteString(": " + cmd.Description)
 		}
 
 		help.WriteByte('\n')
 	}
 
-	help.WriteString("---\n")
-
-	// Generate all subcommands
-	help.WriteString("__Subcommands__\n")
+	var subHelp = strings.Builder{}
 
 	for _, sub := range ctx.Subcommands {
 		if sub.Flag.Is(AdminOnly) {
@@ -248,28 +253,37 @@ func (ctx *Context) Help() string {
 			continue
 		}
 
-		help.WriteString("      " + sub.Name())
+		subHelp.WriteString("      " + sub.Name())
 
 		if sub.Description != "" {
-			help.WriteString(": " + sub.Description)
+			subHelp.WriteString(": " + sub.Description)
 		}
 
-		help.WriteByte('\n')
+		subHelp.WriteByte('\n')
 
 		for _, cmd := range sub.Commands {
 			if cmd.Flag.Is(AdminOnly) {
 				continue
 			}
 
-			help.WriteString("            " +
+			subHelp.WriteString("            " +
 				ctx.Prefix + sub.Name() + " " + cmd.Name())
 
-			if cmd.Description != "" {
-				help.WriteString(": " + cmd.Description)
+			switch {
+			case len(cmd.Usage()) > 0:
+				subHelp.WriteString(" " + strings.Join(cmd.Usage(), " "))
+			case cmd.Description != "":
+				subHelp.WriteString(": " + cmd.Description)
 			}
 
-			help.WriteByte('\n')
+			subHelp.WriteByte('\n')
 		}
+	}
+
+	if sub := subHelp.String(); sub != "" {
+		help.WriteString("---\n")
+		help.WriteString("__Subcommands__\n")
+		help.WriteString(sub)
 	}
 
 	return help.String()
